@@ -8,6 +8,7 @@
     <button onclick="start()">Connect</button>
 
     <script type="text/javascript">
+
     function start() {
 
         document.getElementById("uptime").innerHTML = "Waiting for data...";
@@ -21,14 +22,24 @@
         eventSource.addEventListener('error', function(e) {
             console.log("Errored!"); },false);
 
-             return eventSource
+             // return eventSource
 
-             eventSource.addEventListener('Uptime', (e) => {
-               let parsedData = JSON.parse(e.data);
-               console.log('Received data', parsedData);
-    
+             eventSource.addEventListener('Uptime', function(e) {
+               var parsedData = JSON.parse(e.data);
+               console.log('Received data', parsedData.data);
+
+               var tempSpan = document.getElementById("uptime");
+       var tsSpan   = document.getElementById("tstamp");
+       tempSpan.innerHTML = "Core: " + parsedData.coreid + " uptime: " + parsedData.data + " (h:m:s)";
+       tempSpan.style.fontSize = "28px";
+       tsSpan.innerHTML = "At timestamp " + parsedData.published_at;
+       tsSpan.style.fontSize = "9px";
+
            }, false)
     }
+
     </script>
+
+
 </body>
 </html>
