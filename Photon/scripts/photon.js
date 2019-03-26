@@ -29,5 +29,19 @@ particle.getEventStream({ deviceId: deviceID, auth: token }).then(function(strea
     // console.log('Received data', parsedData.data);
     console.log(" ", data.data);
     maxApi.outlet(data.data);
+
+
+    //Get your devices events
+    particle.getEventStream({ deviceId: "3a004f000f51373331333230", auth: "fda54915211d644dab587f37de978a61771e8322" }).then(function(stream) {
+    stream.on('Uptime', function(data) {
+    // var parsedData = JSON.parse(data.data);
+    // console.log('Received data', parsedData.data);
+    console.log(" ", data.data);
+    maxApi.outlet(data.data);
+
+    });
+    });
+
+
   });
 });
