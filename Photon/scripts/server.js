@@ -1,55 +1,67 @@
 // Run this like:
 // node livegraph.js
 //
-// Make sure you're in the directory containing livegraph.js and the public directory that contains the
+// Requires the following additional packages. From the directory containing livegraph.js, run:
+// npm install particle-api-js yargs node-persist
+//
+// You must log in once using the Particle cloud once using
+// node livegraph.js --login <user> <password>
+// to generate the access token used to access the Particle cloud.
 
-var deviceID = "3c0025000d47363433353735";
-var accessToken = "7e12b97d44098c05725e3ea3169bb89b237dba3b";
+var path = require('path');
 
-var eventSource = new EventSource("https://api.spark.io/v1/devices/" + deviceID + "/events/?access_token=" + accessToken);
+// The source is split into multiple files (setup.js, cloud.js, etc.) and this file is the one
+// that hooks all of the pieces together.
 
-//var url = require('url');
-//var fs = require('fs');
-//var path = require('path');
-var net = require('net');
+// The setup module handles things like parsing the command line and dealing with the settings file.
+// It also keeps track of all of the different modules the code is split into. Most of the modules
+// require the setup module.
+var setup = require('./lib/setup.js');
+setup.settingsDir = path.join(__dirname, 'settings');
 
-// dataPort is the TCP port we listen on from the Photon. This value is encoded in the Photon code
-var dataPort = 7123;
+// The cloud module interacts with the Particle cloud. The devices
+// manager uses the cloud to make the initial connection and locate the server.
+// The device module registers with the cloud module below because it needs to receive Particle
+// publish calls.
+var cloud = require('./lib/cloud.js');
+setup.addModule(cloud);
 
-var rcvdTotal = 0;
-var rcvdPeriod = 0;
+// The devices module keeps track of the devices that are using this server. It uses the cloud
+// module to find out when a device comes online and is ready to connect and then calls a function
+// on the device to let it know the server IP address, port, and nonce (one-time-use authentication
+// token).
+var devices = require('./lib/devices.js');
+setup.addModule(devices);
+cloud.addEventHandler('devices', devices);
 
-// Start a TCP Server. This is what receives data from the Particle Photon
-// https://gist.github.com/creationix/707146
-net.createServer(function (socket) {
-	console.log('data connection started from ' + socket.remoteAddress);
+// The server module implements the HTTP server. It's used to serve static files in the public
+// directory (the index.html, main.js, and main.css) as well as handle SSE (Server Sent Events) and
+// sending data from the Photon to this server.
+var server = require('./lib/server.js');
+server.publicDir = path.join(__dirname, 'livegraph/public');
+server.serverPort = 8070;
+setup.addModule(server);
+devices.server = server;
 
-	// The server sends a 8-bit byte value for each sample. Javascript doesn't really like
-	// binary values, so we use setEncoding to read each byte of a data as 2 hex digits instead.
-	socket.setEncoding('hex');
+// The SSE (Server Sent Events) module implements SSE. We currently have only one channel
+// corresponding to the one Photon we allow to connect at a time, but in theory you could have
+// multiple channels of SSE
+var sse = require('./lib/sse.js');
+setup.addModule(sse);
 
-	socket.on('data', function (data) {
-		var count = data.length / 2;
-		rcvdTotal += count;
-		rcvdPeriod += count;
-		// console.log("got " + count + " bytes rcvdPeriod=" + rcvdPeriod + " " + data.substr(0, 36));
-	});
-	socket.on('end', function () {
-		console.log('data connection ended');
-	});
-}).listen(dataPort);
+// Hook the SSE channel into the /data URL. Requesting this URL returns the SSE data channel.
+var sseChannel = sse.createChannel();
+server.addUrlHandler('/data', sseChannel);
+
+// Register the /devices URL with the HTTP server. This is the URL the Photon uses a POST request
+// to to upload its data, which is then broadcast to web pages using SSE.
+server.addUrlHandler('/devices', devices);
+
+// This is how the device manager knows which channel to broadcast its events to.
+devices.addDataHandler(sseChannel);
 
 
-setInterval(function () {
-	console.log("received " + rcvdPeriod + " bytes in the last 10 seconds " + rcvdTotal + " total");
-	rcvdPeriod = 0;
-
-       // return eventSource
-       eventSource.addEventListener('Uptime', function(e) {
-         var parsedData = JSON.parse(e.data);
-         console.log('Received data', parsedData.data);
-       }
-
-}, 1000);
-
-console.log('listening on port ' + dataPort + ' for data');
+// Prepare/load the settings file
+// This call is asynchronous.
+// Eventually, run() will be called for all modules to begun running
+setup.init();
